@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"net/http"
+	"net/url"
+	"service-nest/errs"
 	"service-nest/interfaces"
 	"service-nest/logger"
 	"service-nest/model"
@@ -25,27 +27,20 @@ func NewHouseholderController(householderService interfaces.HouseholderService) 
 
 func (h *HouseholderController) GetAvailableServices(w http.ResponseWriter, r *http.Request) {
 	categoryId := r.URL.Query().Get("category_id")
-	ctx := r.Context()
-	limit, offset := util.GetPaginationParams(r)
 	if categoryId == "" {
-		services, err := h.householderService.GetAvailableServices(limit, offset)
-		if err != nil {
-			logger.Error("error fetching all service", nil)
-			response.ErrorResponse(w, http.StatusInternalServerError, "internal server error", 1006)
-			return
-		}
-		response.SuccessResponse(w, services, "Available services", http.StatusOK)
-	} else {
-		logger.Info(fmt.Sprintf("category id is %v", categoryId), nil)
-		services, err := h.householderService.GetServicesByCategoryId(ctx, categoryId)
-		if err != nil {
-			logger.Error(err.Error(), nil)
-			response.ErrorResponse(w, http.StatusInternalServerError, "error fetching services", 1006)
-			return
-		}
-		response.SuccessResponse(w, services, "Available services", http.StatusOK)
-
+		logger.Error("No query param for category", nil)
+		response.ErrorResponse(w, http.StatusBadRequest, "request status is required", 2001)
+		return
 	}
+	ctx := r.Context()
+	logger.Info(fmt.Sprintf("category id is %v", categoryId), nil)
+	services, err := h.householderService.GetServicesByCategoryId(ctx, categoryId)
+	if err != nil {
+		logger.Error(err.Error(), nil)
+		response.ErrorResponse(w, http.StatusInternalServerError, "error fetching services", 1006)
+		return
+	}
+	response.SuccessResponse(w, services, "Available services", http.StatusOK)
 }
 
 func (h *HouseholderController) RequestService(w http.ResponseWriter, r *http.Request) {
@@ -153,8 +148,12 @@ func (h *HouseholderController) CancelServiceRequest(w http.ResponseWriter, r *h
 	}
 	err := h.householderService.CancelServiceRequest(ctx, requestID, householderID, status)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Error cancelling request %v", err), nil)
-		response.ErrorResponse(w, http.StatusInternalServerError, err.Error(), 1006)
+		if err.Error() == errs.RequestCancellationTooLate {
+			response.SuccessResponse(w, nil, err.Error(), http.StatusOK)
+		} else {
+			logger.Error(fmt.Sprintf("Error cancelling request %v", err), nil)
+			response.ErrorResponse(w, http.StatusInternalServerError, err.Error(), 1006)
+		}
 		return
 	}
 	logger.Info("Request cancelled successfully", nil)
@@ -240,11 +239,23 @@ func (h *HouseholderController) ViewBookingHistory(w http.ResponseWriter, r *htt
 		return
 	}
 
-	limit, offset := util.GetPaginationParams(r)
+	limit, _ := util.GetPaginationParams(r)
+	lastEvaluatedKey := r.URL.Query().Get("lastEvaluatedKey")
+	var lastKeyString string
+	if lastEvaluatedKey != "" {
+		// URL decode the string if needed
+		decodedKey, err := url.QueryUnescape(lastEvaluatedKey)
+		if err != nil {
+			logger.Error(fmt.Sprintf("Failed to decode lastEvaluatedKey %v", err.Error()), nil)
+			response.ErrorResponse(w, http.StatusBadRequest, "Invalid lastEvaluatedKey format", 2001)
+			return
+		}
+		lastKeyString = decodedKey
+	}
 	status := util.GetFilterParam(r, "status")
 	status = util.ConvertStatus(status)
 
-	serviceRequests, err := h.householderService.ViewStatus(ctx, householderID, limit, offset, status)
+	serviceRequests, lastKey, err := h.householderService.ViewStatus(ctx, householderID, limit, lastKeyString, status)
 	if err != nil {
 		logger.Error("Failed to fetch service requests", map[string]interface{}{
 			"householderID": householderID,
@@ -293,16 +304,32 @@ func (h *HouseholderController) ViewBookingHistory(w http.ResponseWriter, r *htt
 					Price:             provider.Price,
 					Rating:            provider.Rating,
 				})
-
 			}
 		}
 		responseBody = append(responseBody, *currRequest)
 	}
-	// Return the service requests in the response
+
+	// Handle the lastEvaluatedKey for the response
+	var nextKeyString string
+	if lastKey != nil {
+		keyBytes, err := json.Marshal(lastKey)
+		if err != nil {
+			logger.Error(fmt.Sprintf("Failed to marshal lastEvaluatedKey %s", err.Error()), nil)
+			response.ErrorResponse(w, http.StatusInternalServerError, "Internal server error", 1003)
+			return
+		}
+		nextKeyString = string(keyBytes)
+	}
+
+	responseData := map[string]interface{}{
+		"serviceRequests":  responseBody,
+		"lastEvaluatedKey": nextKeyString, // Send key for next request
+	}
+
 	logger.Info("Service requests fetched successfully", map[string]interface{}{
 		"householderID": householderID,
 	})
-	response.SuccessResponse(w, responseBody, "Service Request fetched successfully", http.StatusOK)
+	response.SuccessResponse(w, responseData, "Service Request fetched successfully", http.StatusOK)
 }
 
 func (h *HouseholderController) ViewApprovedRequest(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +468,7 @@ func (h *HouseholderController) ApproveRequest(w http.ResponseWriter, r *http.Re
 
 func (h *HouseholderController) LeaveReview(w http.ResponseWriter, r *http.Request) {
 	var reviewRequest struct {
+		RequestID  string  `json:"request_id" validate:"required"`
 		ServiceID  string  `json:"service_id" validate:"required"`
 		ProviderID string  `json:"provider_id" validate:"required"`
 		ReviewText string  `json:"review_text" validate:"required"`
@@ -470,10 +498,15 @@ func (h *HouseholderController) LeaveReview(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Call the householder service to add the review
-	err = h.householderService.AddReview(ctx, reviewRequest.ProviderID, userID, reviewRequest.ServiceID, reviewRequest.ReviewText, reviewRequest.Rating)
+	err = h.householderService.AddReview(ctx, reviewRequest.ProviderID, userID, reviewRequest.ServiceID, reviewRequest.ReviewText, reviewRequest.Rating, reviewRequest.RequestID)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Error adding review %v", err), nil)
-		response.ErrorResponse(w, http.StatusInternalServerError, err.Error(), 1006)
+		if err.Error() == "review already exists" {
+			logger.Error(fmt.Sprintf("Error adding review %v", err), nil)
+			response.ErrorResponse(w, http.StatusConflict, err.Error(), 1006)
+		} else {
+			logger.Error(fmt.Sprintf("Error adding review %v", err), nil)
+			response.ErrorResponse(w, http.StatusInternalServerError, err.Error(), 1006)
+		}
 		return
 	}
 

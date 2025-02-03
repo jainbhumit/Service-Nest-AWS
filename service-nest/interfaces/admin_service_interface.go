@@ -6,10 +6,9 @@ import (
 )
 
 type AdminService interface {
-	GetAllService(limit, offset int) ([]model.Service, error)
-	DeactivateAccount(userID string) error
+	DeactivateAccount(ctx context.Context, userID string) error
 	DeleteService(ctx context.Context, serviceID string) error
-	ViewReports(limit, offset int) ([]model.ServiceRequest, error)
+	ViewReports(ctx context.Context, limit, offset int, categoryId string) ([]model.Service, error)
 	AddService(ctx context.Context, category *model.Category) error
 	GetUserByEmail(ctx context.Context, userEmail string) (*model.User, error)
 }

@@ -6,37 +6,57 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"mime/multipart"
 	"net/url"
 	config2 "service-nest/config"
 	"strings"
 	"time"
 )
 
-func UploadFileToS3(file multipart.File, fileName string) (string, error) {
-	// Load AWS Config (default)
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(config2.REGION))
-	if err != nil {
-		return "", err
+func GeneratePresignedURL(ctx context.Context, fileName string) (string, string, error) {
+	if fileName == "" {
+		return "", "", fmt.Errorf("filename cannot be empty")
 	}
 
-	//Initialise S3 Service
-	svc := s3.NewFromConfig(cfg)
+	// Load AWS Config with specific options
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(config2.REGION),
+		config.WithDefaultsMode(aws.DefaultsModeInRegion),
+	)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	// Initialize S3 client
+	client := s3.NewFromConfig(cfg)
+
 	bucketName := config2.BUCKET
 	key := fmt.Sprintf("uploads/%d_%s", time.Now().Unix(), fileName)
 
-	// Upload the file to S3
-	_, err = svc.PutObject(context.TODO(), &s3.PutObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(key),
-		Body:   file,
+	// Create the presign client
+	presignClient := s3.NewPresignClient(client, func(po *s3.PresignOptions) {
+		po.Expires = 15 * time.Minute
 	})
-	if err != nil {
-		return "", err
+
+	// Generate presigned URL with specific options
+	input := &s3.PutObjectInput{
+		Bucket:      aws.String(config2.BUCKET),
+		Key:         aws.String(key),
+		ContentType: aws.String("image/png"), // Add content type
 	}
 
-	// Return the S3 URL of the uploaded file
-	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", bucketName, key), nil
+	req, err := presignClient.PresignPutObject(ctx, input)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate presigned URL: %w", err)
+	}
+
+	// Construct the public object URL
+	objectURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s",
+		bucketName,
+		config2.REGION,
+		key,
+	)
+
+	return req.URL, objectURL, nil
 }
 
 func DeleteFileFromS3(fileURL string) error {

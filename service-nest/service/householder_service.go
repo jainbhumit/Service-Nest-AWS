@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"log"
 	"service-nest/errs"
 	"service-nest/interfaces"
@@ -31,32 +32,13 @@ func NewHouseholderService(householderRepo interfaces.HouseholderRepository, pro
 		userRepo:           userRepo,
 	}
 }
-func (s *HouseholderService) ViewStatus(ctx context.Context, householderID string, limit, offset int, status string) ([]model.ServiceRequest, error) {
+func (s *HouseholderService) ViewStatus(ctx context.Context, householderID string, limit int, lastEvaluatedKey string, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error) {
 	// Fetch all service requests for the householder
-	requests, err := s.serviceRequestRepo.GetServiceRequestsByHouseholderID(ctx, householderID, limit, offset, status)
+	requests, lastKey, err := s.serviceRequestRepo.GetServiceRequestsByHouseholderID(ctx, householderID, limit, lastEvaluatedKey, status)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return requests, nil
-}
-
-// SearchService searches for available service_test providers based on service_test type and proximity
-func (s *HouseholderService) SearchService(householder *model.Householder, serviceType string) ([]model.ServiceProvider, error) {
-	providers, err := s.providerRepo.GetProvidersByServiceType(serviceType)
-	if err != nil {
-		return nil, err
-	}
-
-	// Example logic: Filter providers by proximity to householder
-	nearbyProviders := []model.ServiceProvider{}
-	for _, provider := range providers {
-		if s.isNearby(householder, &provider) {
-			nearbyProviders = append(nearbyProviders, provider)
-		}
-	}
-
-	return nearbyProviders, nil
-
+	return requests, lastKey, nil
 }
 
 func (s *HouseholderService) GetServicesByCategoryId(ctx context.Context, categoryId string) ([]model.Service, error) {
@@ -108,18 +90,6 @@ func (s *HouseholderService) RequestService(ctx context.Context, householderRequ
 
 }
 
-// Helper function to determine if a provider is nearby
-func (s *HouseholderService) isNearby(householder *model.Householder, provider *model.ServiceProvider) bool {
-	// TODO Implement proximity logic  based on distance between coordinates
-
-	return true
-}
-
-// GetAvailableServices fetches all available services from the repository_test
-func (s *HouseholderService) GetAvailableServices(limit, offset int) ([]model.Service, error) {
-	return s.serviceRepo.GetAllServices(limit, offset)
-}
-
 // CancelServiceRequest allows the householder to cancel a service_test request
 func (s *HouseholderService) CancelServiceRequest(ctx context.Context, requestID string, householderID string, status string) error {
 	request, err := s.serviceRequestRepo.GetServiceRequestByID(ctx, requestID, householderID, status)
@@ -162,7 +132,7 @@ func (s *HouseholderService) RescheduleServiceRequest(ctx context.Context, reque
 	return s.serviceRequestRepo.UpdateServiceRequest(ctx, request, status)
 }
 
-func (s *HouseholderService) AddReview(ctx context.Context, providerID, householderID, serviceID, comments string, rating float64) error {
+func (s *HouseholderService) AddReview(ctx context.Context, providerID, householderID, serviceID, comments string, rating float64, requestId string) error {
 	location, err := time.LoadLocation("Asia/Kolkata")
 	if err != nil {
 		log.Printf("Failed to load location: %v", err)
@@ -177,6 +147,7 @@ func (s *HouseholderService) AddReview(ctx context.Context, providerID, househol
 		Rating:        rating,
 		Comments:      comments,
 		ReviewDate:    time.Now().In(location),
+		RequestId:     requestId,
 	}
 
 	// Save the review in the repository
@@ -186,11 +157,14 @@ func (s *HouseholderService) AddReview(ctx context.Context, providerID, househol
 	}
 
 	// Recalculate and update the provider's rating
-	err = s.providerRepo.UpdateProviderRating(providerID, serviceID, review.Rating)
+	provider, err := s.serviceRepo.GetProviderByServiceId(ctx, providerID, serviceID)
 	if err != nil {
 		return errors.New(errs.FailUpdateRating)
 	}
-
+	updatedRating := util.CalculateRating(provider.AvgRating, provider.RatingCount, rating)
+	provider.AvgRating = updatedRating
+	provider.RatingCount = provider.RatingCount + 1
+	s.serviceRepo.UpdateProviderRating(ctx, provider)
 	return nil
 }
 

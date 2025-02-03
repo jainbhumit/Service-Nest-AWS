@@ -6,13 +6,14 @@ import (
 	"service-nest/controllers"
 	"service-nest/interfaces"
 	"service-nest/middlewares"
+	"service-nest/model"
 	"service-nest/response"
 )
 
-func SetupRouter(userService interfaces.UserService, householderService interfaces.HouseholderService, providerService interfaces.ServiceProviderService, adminService interfaces.AdminService) *mux.Router {
+func SetupRouter(userService interfaces.UserService, householderService interfaces.HouseholderService, providerService interfaces.ServiceProviderService, adminService interfaces.AdminService, notifier *model.ErrorNotifier) *mux.Router {
 	r := mux.NewRouter()
 	r.Use(middlewares.CORSMiddleware)
-	r.Use(middlewares.LoggingMiddleware)
+	r.Use(middlewares.LoggingMiddleware(notifier))
 	// Public Routes
 	userController := controllers.NewUserController(userService)
 
@@ -120,7 +121,7 @@ func SetupRouter(userService interfaces.UserService, householderService interfac
 		case "Householder":
 			householderController.GetAvailableServices(w, r)
 		case "Admin":
-			adminController.ViewAllService(w, r)
+			householderController.GetAvailableServices(w, r)
 		default:
 			// If role is not recognized, return a forbidden status
 			response.ErrorResponse(w, http.StatusForbidden, "Forbidden - role not allowed", 1002)

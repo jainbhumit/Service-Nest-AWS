@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -238,13 +239,18 @@ func (s *ServiceRequestRepository) CancelServiceRequest(ctx context.Context, req
 	return nil
 }
 
-func (s ServiceRequestRepository) GetAllServiceRequests(limit, offset int) ([]model.ServiceRequest, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context.Context, householderID string, limit, offset int, status string) ([]model.ServiceRequest, error) {
+func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context.Context, householderID string, limit int, lastEvaluatedKey string, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error) {
 	var input *dynamodb.QueryInput
+
+	// Convert lastEvaluatedKey (string) to a map
+	var startKey map[string]types.AttributeValue
+	if lastEvaluatedKey != "" {
+		err := json.Unmarshal([]byte(lastEvaluatedKey), &startKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid lastEvaluatedKey: %v", err)
+		}
+	}
+
 	if status == "" {
 		input = &dynamodb.QueryInput{
 			TableName:              aws.String(config.TABLENAME),
@@ -253,6 +259,8 @@ func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context
 				":pk":       &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", householderID)},
 				":skPrefix": &types.AttributeValueMemberS{Value: "request:"},
 			},
+			Limit:             aws.Int32(int32(limit)), // Apply limit
+			ExclusiveStartKey: startKey,                // Pagination cursor
 		}
 	} else {
 		input = &dynamodb.QueryInput{
@@ -262,16 +270,18 @@ func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context
 				":pk":       &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", householderID)},
 				":skPrefix": &types.AttributeValueMemberS{Value: fmt.Sprintf("request:%s:", status)},
 			},
+			Limit:             aws.Int32(int32(limit)), // Apply limit
+			ExclusiveStartKey: startKey,                // Pagination cursor
 		}
 	}
 
 	result, err := s.client.Query(ctx, input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query services: %v", err)
+		return nil, nil, fmt.Errorf("failed to query services: %v", err)
 	}
 
 	if len(result.Items) == 0 {
-		return []model.ServiceRequest{}, nil
+		return []model.ServiceRequest{}, nil, nil
 	}
 
 	requests := make([]model.ServiceRequest, 0, len(result.Items))
@@ -279,12 +289,12 @@ func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context
 		var request model.ServiceRequest
 		err = attributevalue.UnmarshalMap(item, &request)
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal service: %v", err)
+			return nil, nil, fmt.Errorf("failed to unmarshal service: %v", err)
 		}
 		requests = append(requests, request)
 	}
 
-	return requests, nil
+	return requests, result.LastEvaluatedKey, nil
 }
 
 func (s *ServiceRequestRepository) GetServiceRequestByID(ctx context.Context, requestID string, householderId string, status string) (*model.ServiceRequest, error) {

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -18,26 +19,6 @@ import (
 
 type ServiceRepository struct {
 	client *dynamodb.Client
-}
-
-func (s ServiceRepository) GetAllServices(limit, offset int) ([]model.Service, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s ServiceRepository) GetServiceByID(serviceID string) (*model.Service, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s ServiceRepository) GetServiceIdByCategory(category string) (*string, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s ServiceRepository) CategoryExists(categoryName string) (bool, error) {
-	//TODO implement me
-	panic("implement me")
 }
 
 // NewServiceRepository creates a new instance of ServiceRepository for MySQL
@@ -124,6 +105,51 @@ func (s *ServiceRepository) RemoveCategory(ctx context.Context, serviceID string
 		}
 		return fmt.Errorf("fail to delete category: %v", err)
 	}
+	queryInput := &dynamodb.QueryInput{
+		TableName:              aws.String(config.TABLENAME),
+		KeyConditionExpression: aws.String("PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("service:%s", serviceID)},
+		},
+	}
+
+	result, err := s.client.Query(ctx, queryInput)
+	if err != nil {
+		return fmt.Errorf("failed to query items: %v", err)
+	}
+
+	// Process items in batches of 25 (DynamoDB batch limit)
+	batchSize := 25
+	for i := 0; i < len(result.Items); i += batchSize {
+		end := i + batchSize
+		if end > len(result.Items) {
+			end = len(result.Items)
+		}
+
+		writeRequests := make([]types.WriteRequest, 0, batchSize)
+		for _, item := range result.Items[i:end] {
+			writeRequests = append(writeRequests, types.WriteRequest{
+				DeleteRequest: &types.DeleteRequest{
+					Key: map[string]types.AttributeValue{
+						"PK": item["PK"],
+						"SK": item["SK"],
+					},
+				},
+			})
+		}
+
+		batchInput := &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]types.WriteRequest{
+				config.TABLENAME: writeRequests,
+			},
+		}
+
+		_, err := s.client.BatchWriteItem(ctx, batchInput)
+		if err != nil {
+			return fmt.Errorf("failed to batch delete items: %v", err)
+		}
+	}
+
 	return nil
 }
 func (s ServiceRepository) SaveService(ctx context.Context, service model.Service) error {
@@ -325,7 +351,7 @@ func (s ServiceRepository) GetServicesByCategoryId(ctx context.Context, category
 	return services, nil
 }
 
-func (s ServiceRepository) GetProviderByServiceId(ctx context.Context, providerID string, serviceId string) (*model.Service, error) {
+func (s *ServiceRepository) GetProviderByServiceId(ctx context.Context, providerID string, serviceId string) (*model.Service, error) {
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(config.TABLENAME),
 		Key: map[string]types.AttributeValue{
@@ -350,4 +376,97 @@ func (s ServiceRepository) GetProviderByServiceId(ctx context.Context, providerI
 	}
 
 	return service, nil
+}
+
+func (s *ServiceRepository) UpdateProviderRating(ctx context.Context, provider *model.Service) error {
+	updateMainInput := &dynamodb.UpdateItemInput{
+		TableName: aws.String(config.TABLENAME),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("service:%s", provider.ID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("service_provider:%s", provider.ProviderID)},
+		},
+		UpdateExpression: aws.String("SET avg_rating = :avg_rating, rating_count = :rating_count"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":avg_rating":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", provider.AvgRating)},
+			":rating_count": &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", provider.RatingCount)},
+		},
+		ConditionExpression: aws.String("attribute_exists(PK) AND attribute_exists(SK)"),
+	}
+
+	_, err := s.client.UpdateItem(ctx, updateMainInput)
+	if err != nil {
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			return fmt.Errorf("service with service is %s does not exist", provider.ID)
+		}
+		return fmt.Errorf("error updating request: %v", err)
+	}
+
+	updateMainInput = &dynamodb.UpdateItemInput{
+		TableName: aws.String(config.TABLENAME),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", provider.ProviderID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("service:%s", provider.ID)},
+		},
+		UpdateExpression: aws.String("SET avg_rating = :avg_rating, rating_count = :rating_count"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":avg_rating":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", provider.AvgRating)},
+			":rating_count": &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", provider.RatingCount)},
+		},
+		ConditionExpression: aws.String("attribute_exists(PK) AND attribute_exists(SK)"),
+	}
+
+	_, err = s.client.UpdateItem(ctx, updateMainInput)
+	if err != nil {
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			return fmt.Errorf("service with service is %s does not exist", provider.ID)
+		}
+		return fmt.Errorf("error updating request: %v", err)
+	}
+	return nil
+}
+
+func (s ServiceRepository) GetAllServiceProviderService(ctx context.Context, limit, offset int, categoryId string) ([]model.Service, error) {
+	// Parse the limit and offset from string to int
+
+	var startKey map[string]types.AttributeValue
+	if offset != 0 {
+		// Convert offset string to map if provided (assuming offset is the last evaluated key from the previous page)
+		newOffSet := strconv.Itoa(offset)
+		err := json.Unmarshal([]byte(newOffSet), &startKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid offset value: %v", err)
+		}
+	}
+
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(config.TABLENAME),
+		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :skPrefix)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk":       &types.AttributeValueMemberS{Value: fmt.Sprintf("service:%s", categoryId)},
+			":skPrefix": &types.AttributeValueMemberS{Value: "service_provider:"},
+		},
+		Limit:             aws.Int32(int32(limit)), // Apply the limit
+		ExclusiveStartKey: startKey,                // Use the offset as ExclusiveStartKey
+	}
+
+	result, err := s.client.Query(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query services: %v", err)
+	}
+
+	if len(result.Items) == 0 {
+		return []model.Service{}, nil
+	}
+
+	services := make([]model.Service, 0, len(result.Items))
+	for _, item := range result.Items {
+		var service model.Service
+		err = attributevalue.UnmarshalMap(item, &service)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal services: %v", err)
+		}
+		services = append(services, service)
+	}
+
+	return services, nil
 }

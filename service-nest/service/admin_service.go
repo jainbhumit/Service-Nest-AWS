@@ -25,42 +25,32 @@ func NewAdminService(serviceRepo interfaces.ServiceRepository, serviceRequestRep
 	}
 }
 
-func (s *AdminService) ViewReports(limit, offset int) ([]model.ServiceRequest, error) {
+func (s *AdminService) ViewReports(ctx context.Context, limit, offset int, categoryId string) ([]model.Service, error) {
 
-	return s.serviceRequestRepo.GetAllServiceRequests(limit, offset)
+	return s.serviceRepo.GetAllServiceProviderService(ctx, limit, offset, categoryId)
 
 }
 func (s *AdminService) DeleteService(ctx context.Context, serviceID string) error {
 	return s.serviceRepo.RemoveCategory(ctx, serviceID)
 }
 
-func (s *AdminService) DeactivateAccount(userID string) error {
-	provider, err := s.providerRepo.GetProviderByID(userID)
+func (s *AdminService) DeactivateAccount(ctx context.Context, userID string) error {
+	provider, err := s.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return err
 	}
 
 	provider.IsActive = false
-	err = s.providerRepo.UpdateServiceProvider(provider)
-	if err != nil {
-		return err
-	}
-	err = s.userRepo.DeActivateUser(userID)
-	if err != nil {
-		return err
-	}
-
-	// Delete all services associated with the user
-	err = s.providerRepo.DeleteServicesByProviderID(userID)
+	//err = s.userRepo.UpdateUser(provider)
+	//if err != nil {
+	//	return err
+	//}
+	err = s.userRepo.DeActivateUser(ctx, userID, provider.Email)
 	if err != nil {
 		return err
 	}
 
 	return nil
-}
-
-func (s *AdminService) GetAllService(limit, offset int) ([]model.Service, error) {
-	return s.serviceRepo.GetAllServices(limit, offset)
 }
 
 func (s *AdminService) AddService(ctx context.Context, category *model.Category) error {

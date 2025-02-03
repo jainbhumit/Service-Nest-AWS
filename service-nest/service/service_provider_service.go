@@ -105,10 +105,6 @@ func (s *ServiceProviderService) AcceptServiceRequest(ctx context.Context, provi
 
 	return nil
 }
-func (s *ServiceProviderService) GetServiceRequestByID(requestID string) (*model.ServiceRequest, error) {
-	//return s.serviceRequestRepo.GetServiceRequestByID(requestID)
-	panic("Implement me ")
-}
 
 func (s *ServiceProviderService) ViewServices(ctx context.Context, providerID string) ([]model.Service, error) {
 	providerService, err := s.serviceRepo.GetServiceByProviderID(ctx, providerID)
@@ -117,9 +113,6 @@ func (s *ServiceProviderService) ViewServices(ctx context.Context, providerID st
 	}
 
 	return providerService, nil
-}
-func (s *ServiceProviderService) GetServiceByID(serviceID string) (*model.Service, error) {
-	return s.serviceRepo.GetServiceByID(serviceID)
 }
 
 func (s *ServiceProviderService) ViewApprovedRequestsByProvider(ctx context.Context, providerID string, limit, offset int, sortOrder string) ([]model.ServiceRequest, error) {
@@ -137,8 +130,8 @@ func (s *ServiceProviderService) ViewApprovedRequestsByProvider(ctx context.Cont
 	return serviceRequests, nil
 }
 
-func (s *ServiceProviderService) GetReviews(providerID string, limit, offset int, serviceID string) ([]model.Review, error) {
-	reviews, err := s.serviceProviderRepo.GetReviewsByProviderID(providerID, limit, offset, serviceID)
+func (s *ServiceProviderService) GetReviews(ctx context.Context, providerID string, limit, offset int, serviceID string) ([]model.Review, error) {
+	reviews, err := s.serviceProviderRepo.GetReviewsByProviderID(ctx, providerID, limit, offset, serviceID)
 	if err != nil {
 		return nil, err
 	}

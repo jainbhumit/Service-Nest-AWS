@@ -197,9 +197,50 @@ func (u *UserRepository) GetUserByEmail(ctx context.Context, email string) (*mod
 	return user, nil
 }
 
-func (u UserRepository) DeActivateUser(userID string) error {
-	//TODO implement me
-	panic("implement me")
+func (u UserRepository) DeActivateUser(ctx context.Context, userID string, email string) error {
+	updateMainInput := &dynamodb.UpdateItemInput{
+		TableName: aws.String(config.TABLENAME),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", userID)},
+			"SK": &types.AttributeValueMemberS{Value: userID},
+		},
+		UpdateExpression: aws.String("SET is_active = :is_active"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":is_active": &types.AttributeValueMemberBOOL{Value: false},
+		},
+		ConditionExpression: aws.String("attribute_exists(PK)"),
+	}
+
+	_, err := u.client.UpdateItem(ctx, updateMainInput)
+	if err != nil {
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			return fmt.Errorf(errs.UserNotFound)
+		}
+		return fmt.Errorf("%s: %v", errs.FailToUpdateUser, err)
+	}
+
+	updateMainInput = &dynamodb.UpdateItemInput{
+		TableName: aws.String(config.TABLENAME),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", email)},
+			"SK": &types.AttributeValueMemberS{Value: userID},
+		},
+		UpdateExpression: aws.String("SET is_active = :is_active"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":is_active": &types.AttributeValueMemberBOOL{Value: false},
+		},
+		ConditionExpression: aws.String("attribute_exists(PK)"),
+	}
+
+	_, err = u.client.UpdateItem(ctx, updateMainInput)
+	if err != nil {
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			return fmt.Errorf(errs.UserNotFound)
+		}
+		return fmt.Errorf("%s: %v", errs.FailToUpdateUser, err)
+	}
+
+	return nil
 }
 
 func (u UserRepository) GetSecurityAnswerByEmail(userEmail string) (*string, error) {

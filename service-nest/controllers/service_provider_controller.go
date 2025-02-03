@@ -308,7 +308,8 @@ func (s *ServiceProviderController) ViewReviews(w http.ResponseWriter, r *http.R
 	limit, offset := util.GetPaginationParams(r)
 	// Call the service to get the reviews
 	serviceID := util.GetFilterParam(r, "serviceId")
-	reviews, err := s.serviceProviderService.GetReviews(providerID, limit, offset, serviceID)
+	ctx := r.Context()
+	reviews, err := s.serviceProviderService.GetReviews(ctx, providerID, limit, offset, serviceID)
 	if err != nil {
 		logger.Error(err.Error(), nil)
 		response.ErrorResponse(w, http.StatusInternalServerError, err.Error(), 1003)
