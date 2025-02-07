@@ -32,7 +32,7 @@ func NewHouseholderService(householderRepo interfaces.HouseholderRepository, pro
 		userRepo:           userRepo,
 	}
 }
-func (s *HouseholderService) ViewStatus(ctx context.Context, householderID string, limit int, lastEvaluatedKey string, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error) {
+func (s *HouseholderService) ViewStatus(ctx context.Context, householderID string, limit int, lastEvaluatedKey map[string]types.AttributeValue, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error) {
 	// Fetch all service requests for the householder
 	requests, lastKey, err := s.serviceRequestRepo.GetServiceRequestsByHouseholderID(ctx, householderID, limit, lastEvaluatedKey, status)
 	if err != nil {

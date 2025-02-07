@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -239,18 +238,8 @@ func (s *ServiceRequestRepository) CancelServiceRequest(ctx context.Context, req
 	return nil
 }
 
-func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context.Context, householderID string, limit int, lastEvaluatedKey string, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error) {
+func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context.Context, householderID string, limit int, lastEvaluatedKey map[string]types.AttributeValue, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error) {
 	var input *dynamodb.QueryInput
-
-	// Convert lastEvaluatedKey (string) to a map
-	var startKey map[string]types.AttributeValue
-	if lastEvaluatedKey != "" {
-		err := json.Unmarshal([]byte(lastEvaluatedKey), &startKey)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid lastEvaluatedKey: %v", err)
-		}
-	}
-
 	if status == "" {
 		input = &dynamodb.QueryInput{
 			TableName:              aws.String(config.TABLENAME),
@@ -260,7 +249,7 @@ func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context
 				":skPrefix": &types.AttributeValueMemberS{Value: "request:"},
 			},
 			Limit:             aws.Int32(int32(limit)), // Apply limit
-			ExclusiveStartKey: startKey,                // Pagination cursor
+			ExclusiveStartKey: lastEvaluatedKey,        // Pagination cursor
 		}
 	} else {
 		input = &dynamodb.QueryInput{
@@ -270,8 +259,8 @@ func (s *ServiceRequestRepository) GetServiceRequestsByHouseholderID(ctx context
 				":pk":       &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", householderID)},
 				":skPrefix": &types.AttributeValueMemberS{Value: fmt.Sprintf("request:%s:", status)},
 			},
-			Limit:             aws.Int32(int32(limit)), // Apply limit
-			ExclusiveStartKey: startKey,                // Pagination cursor
+			Limit:             aws.Int32(int32(limit)),
+			ExclusiveStartKey: lastEvaluatedKey,
 		}
 	}
 
@@ -614,7 +603,6 @@ func (s ServiceRequestRepository) GetApproveServiceRequestsByHouseholderID(ctx c
 		input.Limit = aws.Int32(int32(limit))
 	}
 
-	// If offset is provided, we need to implement pagination
 	var startKey map[string]types.AttributeValue
 	if offset > 0 {
 		// First, we need to get the item at the offset position

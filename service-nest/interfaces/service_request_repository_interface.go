@@ -7,9 +7,8 @@ import (
 )
 
 type ServiceRequestRepository interface {
-	//SaveAllServiceRequests(serviceRequests []model.ServiceRequest) error
 	UpdateServiceRequest(ctx context.Context, updatedRequest *model.ServiceRequest, status string) error
-	GetServiceRequestsByHouseholderID(ctx context.Context, householderID string, limit int, lastEvaluatedKey string, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error)
+	GetServiceRequestsByHouseholderID(ctx context.Context, householderID string, limit int, lastEvaluatedKey map[string]types.AttributeValue, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error)
 	GetServiceRequestByID(ctx context.Context, requestID string, householderId string, status string) (*model.ServiceRequest, error)
 	SaveServiceRequest(ctx context.Context, request model.ServiceRequest) error
 	GetApproveServiceRequestsByProviderID(ctx context.Context, providerID string, limit, offset int, sortOrder string) ([]model.ServiceRequest, error)

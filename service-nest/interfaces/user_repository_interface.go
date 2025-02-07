@@ -11,6 +11,7 @@ type UserRepository interface {
 	UpdateUser(ctx context.Context, updatedUser *model.User, oldEmail string) error
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	DeActivateUser(ctx context.Context, userID string, email string) error
-	GetSecurityAnswerByEmail(userEmail string) (*string, error)
-	UpdatePassword(userEmail, updatedPassword string) error
+	UpdatePassword(ctx context.Context, userEmail, userId string, updatedPassword string) error
+	SaveOTP(ctx context.Context, email string, otp string) error
+	ValidateOTP(ctx context.Context, email string, otp string) (bool, error)
 }

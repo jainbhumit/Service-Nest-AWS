@@ -15,6 +15,6 @@ type HouseholderService interface {
 	CancelServiceRequest(ctx context.Context, requestID string, householderID string, status string) error
 	RequestService(ctx context.Context, houseHolderRequest model.ServiceRequest) (string, error)
 	GetServicesByCategoryId(ctx context.Context, categoryId string) ([]model.Service, error)
-	ViewStatus(ctx context.Context, householderID string, limit int, lastEvaluatedKey string, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error)
+	ViewStatus(ctx context.Context, householderID string, limit int, lastEvaluatedKey map[string]types.AttributeValue, status string) ([]model.ServiceRequest, map[string]types.AttributeValue, error)
 	GetAllServiceCategory(ctx context.Context) ([]model.Category, error)
 }

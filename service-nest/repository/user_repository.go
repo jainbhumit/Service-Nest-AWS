@@ -12,6 +12,7 @@ import (
 	"service-nest/interfaces"
 	"service-nest/model"
 	"strings"
+	"time"
 )
 
 type UserRepository struct {
@@ -223,7 +224,7 @@ func (u UserRepository) DeActivateUser(ctx context.Context, userID string, email
 		TableName: aws.String(config.TABLENAME),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", email)},
-			"SK": &types.AttributeValueMemberS{Value: userID},
+			"SK": &types.AttributeValueMemberS{Value: email},
 		},
 		UpdateExpression: aws.String("SET is_active = :is_active"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
@@ -243,12 +244,80 @@ func (u UserRepository) DeActivateUser(ctx context.Context, userID string, email
 	return nil
 }
 
-func (u UserRepository) GetSecurityAnswerByEmail(userEmail string) (*string, error) {
-	//TODO implement me
-	panic("implement me")
+func (u *UserRepository) SaveOTP(ctx context.Context, email string, otp string) error {
+	otpModal := &model.OTP{
+		Email: "otp:" + email,
+		Otp:   otp,
+		TTl:   time.Now().Add(5 * time.Minute).Unix(),
+	}
+	otpModalAv, err := attributevalue.MarshalMap(otpModal)
+	if err != nil {
+		return err
+	}
+	_, err = u.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(config.TABLENAME),
+		Item:      otpModalAv,
+	})
+	return err
 }
 
-func (u UserRepository) UpdatePassword(userEmail, updatedPassword string) error {
-	//TODO implement me
-	panic("implement me")
+func (u *UserRepository) ValidateOTP(ctx context.Context, email string, otp string) (bool, error) {
+	result, err := u.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(config.TABLENAME),
+		KeyConditionExpression: aws.String("PK = :pk AND SK = :sk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("otp:%s", email)},
+			":sk": &types.AttributeValueMemberS{Value: fmt.Sprintf("%s", otp)},
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+	return len(result.Items) == 1, nil
+}
+
+func (u *UserRepository) UpdatePassword(ctx context.Context, userEmail, userId string, updatedPassword string) error {
+	updateMainInput := &dynamodb.UpdateItemInput{
+		TableName: aws.String(config.TABLENAME),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", userId)},
+			"SK": &types.AttributeValueMemberS{Value: userId},
+		},
+		UpdateExpression: aws.String("SET password = :password"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":password": &types.AttributeValueMemberS{Value: updatedPassword},
+		},
+		ConditionExpression: aws.String("attribute_exists(PK)"),
+	}
+
+	_, err := u.client.UpdateItem(ctx, updateMainInput)
+	if err != nil {
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			return fmt.Errorf(errs.UserNotFound)
+		}
+		return fmt.Errorf("%s: %v", errs.FailToUpdateUser, err)
+	}
+
+	updateMainInput = &dynamodb.UpdateItemInput{
+		TableName: aws.String(config.TABLENAME),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("user:%s", userEmail)},
+			"SK": &types.AttributeValueMemberS{Value: userEmail},
+		},
+		UpdateExpression: aws.String("SET password = :password"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":password": &types.AttributeValueMemberS{Value: updatedPassword},
+		},
+		ConditionExpression: aws.String("attribute_exists(PK)"),
+	}
+
+	_, err = u.client.UpdateItem(ctx, updateMainInput)
+	if err != nil {
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			return fmt.Errorf(errs.UserNotFound)
+		}
+		return fmt.Errorf("%s: %v", errs.FailToUpdateUser, err)
+	}
+
+	return nil
 }

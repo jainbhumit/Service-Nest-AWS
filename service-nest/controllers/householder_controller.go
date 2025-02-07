@@ -3,9 +3,9 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/gorilla/mux"
 	"net/http"
-	"net/url"
 	"service-nest/errs"
 	"service-nest/interfaces"
 	"service-nest/logger"
@@ -221,6 +221,15 @@ func (h *HouseholderController) RescheduleServiceRequest(w http.ResponseWriter, 
 	//color.Green("Service request %s has been successfully rescheduled.", requestID)
 }
 func (h *HouseholderController) ViewBookingHistory(w http.ResponseWriter, r *http.Request) {
+
+	var request struct {
+		Key string `json:"start_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		logger.Error("Invalid input", nil)
+		response.ErrorResponse(w, http.StatusBadRequest, "Invalid input", 1001)
+		return
+	}
 	ctx := r.Context()
 	role := r.Context().Value("role").(string)
 	var householderID string
@@ -240,22 +249,21 @@ func (h *HouseholderController) ViewBookingHistory(w http.ResponseWriter, r *htt
 	}
 
 	limit, _ := util.GetPaginationParams(r)
-	lastEvaluatedKey := r.URL.Query().Get("lastEvaluatedKey")
-	var lastKeyString string
-	if lastEvaluatedKey != "" {
-		// URL decode the string if needed
-		decodedKey, err := url.QueryUnescape(lastEvaluatedKey)
+	var lastKey map[string]types.AttributeValue
+	if request.Key != "" {
+		// Unmarshal the JSON string into a map
+		err := json.Unmarshal([]byte(request.Key), &lastKey)
 		if err != nil {
-			logger.Error(fmt.Sprintf("Failed to decode lastEvaluatedKey %v", err.Error()), nil)
+			logger.Error(fmt.Sprintf("Failed to unmarshal lastEvaluatedKey %v", err.Error()), nil)
 			response.ErrorResponse(w, http.StatusBadRequest, "Invalid lastEvaluatedKey format", 2001)
 			return
 		}
-		lastKeyString = decodedKey
 	}
+	logger.Info("Last Evaluated Key is ", map[string]interface{}{"key": lastKey})
 	status := util.GetFilterParam(r, "status")
 	status = util.ConvertStatus(status)
 
-	serviceRequests, lastKey, err := h.householderService.ViewStatus(ctx, householderID, limit, lastKeyString, status)
+	serviceRequests, lastKey, err := h.householderService.ViewStatus(ctx, householderID, limit, lastKey, status)
 	if err != nil {
 		logger.Error("Failed to fetch service requests", map[string]interface{}{
 			"householderID": householderID,
@@ -309,21 +317,21 @@ func (h *HouseholderController) ViewBookingHistory(w http.ResponseWriter, r *htt
 		responseBody = append(responseBody, *currRequest)
 	}
 
-	// Handle the lastEvaluatedKey for the response
-	var nextKeyString string
-	if lastKey != nil {
-		keyBytes, err := json.Marshal(lastKey)
-		if err != nil {
-			logger.Error(fmt.Sprintf("Failed to marshal lastEvaluatedKey %s", err.Error()), nil)
-			response.ErrorResponse(w, http.StatusInternalServerError, "Internal server error", 1003)
-			return
-		}
-		nextKeyString = string(keyBytes)
-	}
+	//// Handle the lastEvaluatedKey for the response
+	//var nextKeyString string
+	//if lastKey != nil {
+	//	keyBytes, err := json.Marshal(lastKey)
+	//	if err != nil {
+	//		logger.Error(fmt.Sprintf("Failed to marshal lastEvaluatedKey %s", err.Error()), nil)
+	//		response.ErrorResponse(w, http.StatusInternalServerError, "Internal server error", 1003)
+	//		return
+	//	}
+	//	nextKeyString = url.QueryEscape(string(keyBytes)) // URL encode the key
+	//}
 
 	responseData := map[string]interface{}{
 		"serviceRequests":  responseBody,
-		"lastEvaluatedKey": nextKeyString, // Send key for next request
+		"lastEvaluatedKey": lastKey, // Send key for next request
 	}
 
 	logger.Info("Service requests fetched successfully", map[string]interface{}{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"service-nest/errs"
 	"service-nest/interfaces"
 	"service-nest/model"
 	"service-nest/repository"
@@ -97,24 +96,6 @@ func (s *UserService) CreateUser(ctx context.Context, user *model.User) error {
 	return nil
 }
 
-func (s *UserService) ForgetPasword(email string, answer string, updatedPassword string) error {
-	securityAnswer, err := s.userRepo.GetSecurityAnswerByEmail(email)
-	if err != nil {
-		return err
-	}
-	if *securityAnswer != answer {
-		return fmt.Errorf(errs.IncorrectSecurityAnswer)
-	}
-
-	err = s.userRepo.UpdatePassword(email, updatedPassword)
-	if err != nil {
-		return err
-	}
-
-	return nil
-
-}
-
 func (s *UserService) GenerateOtp(ctx context.Context, email string) error {
 	_, err := s.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
@@ -124,17 +105,24 @@ func (s *UserService) GenerateOtp(ctx context.Context, email string) error {
 	if err != nil {
 		return err
 	}
-	s.otpRepo.SaveOTP(email, otp)
-
+	err = s.userRepo.SaveOTP(ctx, email, otp)
+	if err != nil {
+		return err
+	}
 	return util.SendOTPEmail(email, otp)
 }
 
-func (s *UserService) VerifyAndUpdatePassword(email, otp string, password string) error {
-	valid := s.otpRepo.ValidateOTP(email, otp)
-	if valid == false {
-		return errors.New("Invalid Otp")
+func (s *UserService) VerifyAndUpdatePassword(ctx context.Context, email, otp string, password string) error {
+	valid, err := s.userRepo.ValidateOTP(ctx, email, otp)
+	if err != nil {
+		return err
 	}
-	err := s.userRepo.UpdatePassword(email, password)
+	if valid == false {
+		return errors.New("invalid otp")
+	}
+	user, err := s.userRepo.GetUserByEmail(ctx, email)
+	user.Password = password
+	err = s.userRepo.UpdateUser(ctx, user, email)
 	if err != nil {
 		return err
 	}

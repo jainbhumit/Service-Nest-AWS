@@ -10,7 +10,6 @@ type UserService interface {
 	CheckUserExists(ctx context.Context, email string) (*model.User, error)
 	UpdateUser(ctx context.Context, userID string, newEmail, newPassword, newAddress, newPhone *string) error
 	ViewProfileByID(ctx context.Context, userID string) (*model.User, error)
-	ForgetPasword(email string, answer string, updatedPassword string) error
 	GenerateOtp(ctx context.Context, email string) error
-	VerifyAndUpdatePassword(email, password string, otp string) error
+	VerifyAndUpdatePassword(ctx context.Context, email, password string, otp string) error
 }

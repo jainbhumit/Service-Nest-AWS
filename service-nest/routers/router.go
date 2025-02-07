@@ -21,8 +21,6 @@ func SetupRouter(userService interfaces.UserService, householderService interfac
 
 	r.HandleFunc("/login", userController.LoginUser).Methods("POST")
 
-	r.HandleFunc("/forget", userController.ForgetPasswordHandler).Methods("Put")
-
 	r.HandleFunc("/forgot", userController.VerifyOtpAndUpdatePassword).Methods("PUT")
 
 	r.HandleFunc("/otp", userController.GenerateOtp).Methods("POST")
@@ -46,7 +44,7 @@ func SetupRouter(userService interfaces.UserService, householderService interfac
 
 	userRoutes.HandleFunc("/services/request/{request_id}", householderController.CancelServiceRequest).Methods("PATCH")
 
-	userRoutes.HandleFunc("/bookings", householderController.ViewBookingHistory).Methods("GET")
+	userRoutes.HandleFunc("/bookings", householderController.ViewBookingHistory).Methods("POST")
 
 	userRoutes.HandleFunc("/services/request/approve", householderController.ApproveRequest).Methods("PUT")
 

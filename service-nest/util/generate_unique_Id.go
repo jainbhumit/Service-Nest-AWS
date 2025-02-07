@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
 	"math/rand"
 	"net/smtp"
@@ -45,4 +46,15 @@ func SendOTPEmail(to, otp string) error {
 	subject := "Your OTP Code For Service Nest"
 	body := fmt.Sprintf("Your OTP for verification is: %s. It is valid for 5 minutes.", otp)
 	return sendEmail(to, subject, body)
+}
+
+func GenerateExclusiveStartKey(pk, sk string) (map[string]types.AttributeValue, error) {
+
+	// Create ExclusiveStartKey map
+	exclusiveStartKey := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: pk},
+		"SK": &types.AttributeValueMemberS{Value: sk},
+	}
+
+	return exclusiveStartKey, nil
 }

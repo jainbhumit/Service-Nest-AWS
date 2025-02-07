@@ -33,13 +33,6 @@ func (o *OtpRepository) GenerateOTP() (string, error) {
 	return otp, nil
 }
 
-func (o *OtpRepository) SaveOTP(email, otp string) {
-	otpStore.Lock()
-	defer otpStore.Unlock()
-	otpStore.data[email] = otp
-	otpStore.expiry[email] = time.Now().Add(5 * time.Minute)
-}
-
 func (o *OtpRepository) ValidateOTP(email, otp string) bool {
 	otpStore.RLock()
 	defer otpStore.RUnlock()
