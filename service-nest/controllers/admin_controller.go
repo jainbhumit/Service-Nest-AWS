@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"net/http"
+	"service-nest/errs"
 	"service-nest/interfaces"
 	"service-nest/logger"
 	"service-nest/model"
@@ -122,6 +123,10 @@ func (a *AdminController) ViewUserDetail(w http.ResponseWriter, r *http.Request)
 	user, err := a.adminService.GetUserByEmail(ctx, userEmail)
 
 	if err != nil {
+		if err.Error() == errs.UserNotFound {
+			response.SuccessResponse(w, nil, errs.UserNotFound, http.StatusOK)
+			return
+		}
 		logger.Error("error fetching services", nil)
 		response.ErrorResponse(w, http.StatusInternalServerError, err.Error(), 1003)
 		return

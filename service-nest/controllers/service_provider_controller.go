@@ -257,6 +257,10 @@ func (s *ServiceProviderController) ViewApprovedRequests(w http.ResponseWriter, 
 	approvedRequests, err := s.serviceProviderService.ViewApprovedRequestsByProvider(ctx, providerID, limit, offset, sortOrder)
 
 	if err != nil {
+		if err.Error() == "no approved requests found for this provider" {
+			response.SuccessResponse(w, nil, err.Error(), http.StatusOK)
+			return
+		}
 		logger.Error(err.Error(), nil)
 		response.ErrorResponse(w, http.StatusInternalServerError, err.Error(), 1008)
 

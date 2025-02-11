@@ -370,6 +370,10 @@ func (h *HouseholderController) ViewApprovedRequest(w http.ResponseWriter, r *ht
 	}
 	approvedRequests, err := h.householderService.ViewApprovedRequests(ctx, householderID, limit, offset, sortOrder)
 	if err != nil {
+		if err.Error() == errs.NoApproveRequestFound {
+			response.SuccessResponse(w, nil, err.Error(), http.StatusOK)
+			return
+		}
 		logger.Error(err.Error(), nil)
 		response.ErrorResponse(w, http.StatusInternalServerError, err.Error(), 1008)
 		return
