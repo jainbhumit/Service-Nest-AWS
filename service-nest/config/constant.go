@@ -1,6 +1,4 @@
 package config
 
-const TABLENAME = "servicenest"
-const BUCKET = "service-nest-category1"
-const REGION = "us-east-1"
-const SNSARN = "arn:aws:sns:us-east-1:116777895904:Service-Nest"
+// Legacy variable exports (TABLENAME, BUCKET, REGION, SNSARN) are populated by Load().
+// See env.go for the EnvConfig struct and environment variable contract.

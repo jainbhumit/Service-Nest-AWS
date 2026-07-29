@@ -3,13 +3,13 @@ package util
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"net/url"
-	config2 "service-nest/config"
+	"service-nest/config"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 func GeneratePresignedURL(ctx context.Context, fileName string) (string, string, error) {
@@ -17,31 +17,22 @@ func GeneratePresignedURL(ctx context.Context, fileName string) (string, string,
 		return "", "", fmt.Errorf("filename cannot be empty")
 	}
 
-	// Load AWS Config with specific options
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(config2.REGION),
-		config.WithDefaultsMode(aws.DefaultsModeInRegion),
-	)
+	client, err := config.S3Client(ctx)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to load AWS config: %w", err)
+		return "", "", fmt.Errorf("failed to create S3 client: %w", err)
 	}
 
-	// Initialize S3 client
-	client := s3.NewFromConfig(cfg)
-
-	bucketName := config2.BUCKET
+	bucketName := config.BUCKET
 	key := fmt.Sprintf("uploads/%d_%s", time.Now().Unix(), fileName)
 
-	// Create the presign client
 	presignClient := s3.NewPresignClient(client, func(po *s3.PresignOptions) {
 		po.Expires = 15 * time.Minute
 	})
 
-	// Generate presigned URL with specific options
 	input := &s3.PutObjectInput{
-		Bucket:      aws.String(config2.BUCKET),
+		Bucket:      aws.String(bucketName),
 		Key:         aws.String(key),
-		ContentType: aws.String("image/png"), // Add content type
+		ContentType: aws.String("image/png"),
 	}
 
 	req, err := presignClient.PresignPutObject(ctx, input)
@@ -49,38 +40,35 @@ func GeneratePresignedURL(ctx context.Context, fileName string) (string, string,
 		return "", "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
 
-	// Construct the public object URL
 	objectURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s",
 		bucketName,
-		config2.REGION,
+		config.REGION,
 		key,
 	)
+
+	envCfg := config.Current()
+	if envCfg != nil && envCfg.S3Endpoint != "" {
+		objectURL = fmt.Sprintf("%s/%s/%s", strings.TrimRight(envCfg.S3Endpoint, "/"), bucketName, key)
+	}
 
 	return req.URL, objectURL, nil
 }
 
 func DeleteFileFromS3(fileURL string) error {
-	// Load AWS Config (default)
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(config2.REGION))
+	client, err := config.S3Client(context.TODO())
 	if err != nil {
 		return err
 	}
 
-	// Initialize S3 Service
-	svc := s3.NewFromConfig(cfg)
-
-	// Parse the URL
 	parsedURL, err := url.Parse(fileURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse URL: %w", err)
 	}
 
-	// Extract the bucket and key
-	bucketName := config2.BUCKET
-	key := strings.TrimPrefix(parsedURL.Path, "/") // Remove the leading slash
+	bucketName := config.BUCKET
+	key := strings.TrimPrefix(parsedURL.Path, "/")
 
-	// Perform the deletion
-	_, err = svc.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+	_, err = client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})

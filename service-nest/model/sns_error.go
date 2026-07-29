@@ -13,6 +13,10 @@ type ErrorNotifier struct {
 }
 
 func (n *ErrorNotifier) NotifyError(details map[string]interface{}, stack []byte) error {
+	if n == nil || n.TopicArn == "" || n.SnsClient == nil {
+		return nil
+	}
+
 	// Create a formatted message with all error details
 	message := fmt.Sprintf(
 		"Internal Server Error Details:\n"+

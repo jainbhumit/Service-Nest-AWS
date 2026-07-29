@@ -1,141 +1,172 @@
-# serviceNest
+# Service Nest — AWS Backend
 
-This is a sample template for serviceNest - Below is a brief explanation of what we have generated for you:
+Go Lambda API (Gorilla Mux) behind API Gateway. Single production stack in `us-east-1`.
 
-```bash
-.
-├── Makefile                    <-- Make to automate build
-├── README.md                   <-- This instructions file
-├── service-nest                 <-- Source code for a lambda function
-│   ├── main.go                 <-- Lambda function code
-│   └── main_test.go            <-- Unit tests
-└── template.yaml
+**Prod API (current):** `https://1fh0244il4.execute-api.us-east-1.amazonaws.com/Prod`
+
+## Prerequisites
+
+- Go 1.21+
+- [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (local DynamoDB only)
+- AWS CLI configured for manual deploys (`AWS_PROFILE`)
+
+## Local development
+
+```powershell
+cd Service-Nest-AWS
+copy .env.example .env
+# Edit JWT_SECRET and other values in .env
+
+make local
+# or: powershell -File scripts/run-local.ps1
 ```
 
-## Requirements
+| Endpoint | Purpose |
+|----------|---------|
+| `http://localhost:8080/health` | Liveness |
+| `http://localhost:8080/health/ready` | DynamoDB connectivity |
 
-* AWS CLI already configured with Administrator permission
-* [Docker installed](https://www.docker.com/community-edition)
-* [Golang](https://golang.org)
-* SAM CLI - [Install the SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
+Local stack uses DynamoDB Local (port 8000). SNS is disabled when `SNS_TOPIC_ARN` is empty. S3 and SMTP are optional locally.
 
-## Setup process
+### Makefile targets
 
-### Installing dependencies & building the target 
+| Target | Description |
+|--------|-------------|
+| `make test` | `go test ./...` |
+| `make validate` | Tests + `sam validate` |
+| `make local` | Compose + table init + local HTTP server |
+| `make deploy` | Manual prod deploy (interactive changeset) |
+| `make verify-deploy` | Post-deploy smoke bundle |
 
-In this example we use the built-in `sam build` to automatically download all the dependencies and package our build target.   
-Read more about [SAM Build here](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-cli-command-reference-sam-build.html) 
+## Manual production deploy
 
-The `sam build` command is wrapped inside of the `Makefile`. To execute this simply run
- 
-```shell
-make
+Use when GitHub Actions is unavailable or for emergency deploys from your machine.
+
+```powershell
+cd Service-Nest-AWS
+copy .env.example .env
+# Set JWT_SECRET, SMTP_APP_PASSWORD, SMTP_FROM
+
+$env:AWS_PROFILE = "your-prod-profile"
+make deploy
+make verify-deploy
 ```
 
-### Local development
+Stack: **`serviceNest`** · Region: **`us-east-1`**
 
-**Invoking function locally through local API Gateway**
+Secrets are passed as SAM parameters (`JwtSecret`, `SmtpAppPassword`, `SmtpFrom`) — never committed to git.
 
-```bash
-sam local start-api
+## GitHub OIDC setup (one-time)
+
+GitHub Actions deploys use **OIDC only** — no long-lived `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in secrets.
+
+### 1. GitHub OIDC provider in AWS
+
+If not already present in account `116777895904`:
+
+- Provider URL: `https://token.actions.githubusercontent.com`
+- Audience: `sts.amazonaws.com`
+
+### 2. IAM role
+
+Create role **`GitHubActionsServiceNestDeploy`** with:
+
+- **Trust policy:** [`docs/github-oidc-trust-policy.json`](docs/github-oidc-trust-policy.json)  
+  Restricts assumption to `repo:jainbhumit/Service-Nest-AWS:environment:production` (fork PRs cannot assume this role).
+
+- **Permissions policy:** [`docs/github-oidc-permissions-policy.json`](docs/github-oidc-permissions-policy.json)  
+  Scoped to stack `serviceNest` and SAM artifact buckets. Adjust if the first deploy surfaces missing actions.
+
+### 3. GitHub repository settings
+
+**Environment `production`** (Settings → Environments):
+
+- Enable **Required reviewers** (self-approval is fine for a solo repo).
+- Add environment secrets:
+
+| Secret | Description |
+|--------|-------------|
+| `AWS_DEPLOY_ROLE_ARN` | ARN of `GitHubActionsServiceNestDeploy` |
+| `JWT_SECRET` | JWT signing secret (16+ chars) |
+| `SMTP_APP_PASSWORD` | Gmail app password for OTP |
+| `SMTP_FROM` | Sender email address |
+
+Do **not** store AWS access keys. OTP values must never appear in workflow logs.
+
+## CI — pull requests
+
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+
+On every PR to `main`:
+
+1. `go test ./...`
+2. `sam validate`
+
+No AWS credentials. No deploy.
+
+## Production deploy — approval gate
+
+Workflow: [`.github/workflows/deploy-prod.yml`](.github/workflows/deploy-prod.yml)
+
+**Triggers:**
+
+- Push to `main` (after merge)
+- Manual `workflow_dispatch`
+
+**Flow:**
+
+```
+test job (go test + sam validate)
+    ↓
+deploy job → waits for production environment approval
+    ↓
+OIDC → sam build → sam deploy (stack serviceNest)
+    ↓
+scripts/verify-deploy.sh (smoke bundle)
 ```
 
-If the previous command ran successfully you should now be able to hit the following local endpoint to invoke your function `http://localhost:3000/hello`
+The deploy job logs the deployed SHA as **last known-good candidate** — note it after successful runs.
 
-**SAM CLI** is used to emulate both Lambda and API Gateway locally and uses our `template.yaml` to understand how to bootstrap this environment (runtime, where the source code is, etc.) - The following excerpt is what the CLI will read in order to initialize an API and its routes:
+If smoke fails after a successful CloudFormation update, treat prod as unhealthy and roll back before debugging live.
 
-```yaml
-...
-Events:
-    HelloWorld:
-        Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
-        Properties:
-            Path: /hello
-            Method: get
+## Rollback
+
+| Method | When to use |
+|--------|-------------|
+| **GitHub Actions** | Preferred — Actions → Deploy Production → Run workflow → set `git_ref` to a previous commit SHA or tag → approve deploy |
+| **Local** | `git checkout <good-sha>` → `make deploy` → `make verify-deploy` |
+| **CloudFormation auto-rollback** | If `sam deploy` fails mid-update, CloudFormation rolls back the changeset automatically |
+
+After rollback, re-run the smoke bundle (`make verify-deploy` or wait for the workflow smoke step).
+
+## Post-deploy checklist (prod-only)
+
+These cannot be fully verified locally:
+
+1. **Smoke bundle** — `make verify-deploy` or CI smoke step (health, ready, login error envelope).
+2. **Category image upload** — presigned S3 PUT from the Angular UI.
+3. **OTP email** — trigger login/signup with a real address; confirm email delivery.
+4. **SNS alerts** (optional) — induce a 500 in a controlled test; confirm SNS notification.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---------|-------|
+| `GET /health/ready` fails after deploy | Lambda IAM → DynamoDB table `servicenest`; region `us-east-1` |
+| Login works but no OTP email | `SMTP_FROM`, `SMTP_APP_PASSWORD` in Lambda env / GitHub secrets |
+| OIDC `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` matches `environment:production`; role ARN secret correct |
+| SAM deploy permission denied | Extend [`docs/github-oidc-permissions-policy.json`](docs/github-oidc-permissions-policy.json) |
+| Local DynamoDB errors | Docker running; `make local-init` or `scripts/local-init.ps1` |
+
+## Project layout
+
 ```
-
-## Packaging and deployment
-
-AWS Lambda Golang runtime requires a flat folder with the executable generated on build step. SAM will use `CodeUri` property to know where to look up for the application:
-
-```yaml
-...
-    FirstFunction:
-        Type: AWS::Serverless::Function
-        Properties:
-            CodeUri: hello_world/
-            ...
+Service-Nest-AWS/
+├── .github/workflows/     # ci.yml, deploy-prod.yml
+├── docs/                  # OIDC IAM JSON templates
+├── scripts/               # deploy, verify-deploy, local-init
+├── service-nest/          # Go source (cmd/main.go = Lambda, cmd/local = dev server)
+├── template.yaml          # SAM template
+└── samconfig.toml         # Stack serviceNest, us-east-1
 ```
-
-To deploy your application for the first time, run the following in your shell:
-
-```bash
-sam deploy --guided
-```
-
-The command will package and deploy your application to AWS, with a series of prompts:
-
-* **Stack Name**: The name of the stack to deploy to CloudFormation. This should be unique to your account and region, and a good starting point would be something matching your project name.
-* **AWS Region**: The AWS region you want to deploy your app to.
-* **Confirm changes before deploy**: If set to yes, any change sets will be shown to you before execution for manual review. If set to no, the AWS SAM CLI will automatically deploy application changes.
-* **Allow SAM CLI IAM role creation**: Many AWS SAM templates, including this example, create AWS IAM roles required for the AWS Lambda function(s) included to access AWS services. By default, these are scoped down to minimum required permissions. To deploy an AWS CloudFormation stack which creates or modifies IAM roles, the `CAPABILITY_IAM` value for `capabilities` must be provided. If permission isn't provided through this prompt, to deploy this example you must explicitly pass `--capabilities CAPABILITY_IAM` to the `sam deploy` command.
-* **Save arguments to samconfig.toml**: If set to yes, your choices will be saved to a configuration file inside the project, so that in the future you can just re-run `sam deploy` without parameters to deploy changes to your application.
-
-You can find your API Gateway Endpoint URL in the output values displayed after deployment.
-
-### Testing
-
-We use `testing` package that is built-in in Golang and you can simply run the following command to run our tests:
-
-```shell
-cd ./service-nest/
-go test -v .
-```
-# Appendix
-
-### Golang installation
-
-Please ensure Go 1.x (where 'x' is the latest version) is installed as per the instructions on the official golang website: https://golang.org/doc/install
-
-A quickstart way would be to use Homebrew, chocolatey or your linux package manager.
-
-#### Homebrew (Mac)
-
-Issue the following command from the terminal:
-
-```shell
-brew install golang
-```
-
-If it's already installed, run the following command to ensure it's the latest version:
-
-```shell
-brew update
-brew upgrade golang
-```
-
-#### Chocolatey (Windows)
-
-Issue the following command from the powershell:
-
-```shell
-choco install golang
-```
-
-If it's already installed, run the following command to ensure it's the latest version:
-
-```shell
-choco upgrade golang
-```
-
-## Bringing to the next level
-
-Here are a few ideas that you can use to get more acquainted as to how this overall process works:
-
-* Create an additional API resource (e.g. /hello/{proxy+}) and return the name requested through this new path
-* Update unit test to capture that
-* Package & Deploy
-
-Next, you can use the following resources to know more about beyond hello world samples and how others structure their Serverless applications:
-
-* [AWS Serverless Application Repository](https://aws.amazon.com/serverless/serverlessrepo/)
