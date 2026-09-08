@@ -46,7 +46,7 @@ Resources:
   HelloWorldFunction:
     Type: AWS::Serverless::Function
     Metadata:
-      BuildMethod: go1.x
+      BuildMethod: makefile
     Properties:
       CodeUri: service-nest
       Handler: bootstrap

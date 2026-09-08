@@ -78,6 +78,12 @@ jobs:
       - name: Verify OIDC identity
         run: aws sts get-caller-identity --no-cli-pager
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: service-nest/go.sum
+
       - name: Set up SAM CLI
         uses: aws-actions/setup-sam@v2
         with:
