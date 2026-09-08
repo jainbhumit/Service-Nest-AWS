@@ -49,6 +49,6 @@ replace gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.2.8
 
 module service-nest
 
-go 1.21
+go 1.24
 
-toolchain go1.22.5
+toolchain go1.24.5
