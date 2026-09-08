@@ -1,12 +1,13 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
 	"math/rand"
 	"net/smtp"
-	"os"
+	"service-nest/config"
 )
 
 func GenerateUniqueID() string {
@@ -18,27 +19,24 @@ func GenerateUUID() string {
 }
 
 func sendEmail(to, subject, body string) error {
-	from := "bhumitjain9636@gmail.com"
-	appPassword := os.Getenv("APP_PASSWORD")
+	cfg := config.Current()
+	if cfg == nil {
+		return errors.New("application config is not loaded")
+	}
+	if !cfg.SMTPConfigured() {
+		return errors.New("smtp is not configured")
+	}
 
-	// SMTP server configuration
-	smtpHost := "smtp.gmail.com"
-	smtpPort := "587"
-
-	// Message body
 	message := []byte("Subject: " + subject + "\r\n" +
 		"\r\n" + body + "\r\n")
 
-	// Authentication
-	auth := smtp.PlainAuth("", from, appPassword, smtpHost)
+	auth := smtp.PlainAuth("", cfg.SMTPFrom, cfg.SMTPAppPassword, cfg.SMTPHost)
+	addr := cfg.SMTPHost + ":" + cfg.SMTPPort
 
-	// Sending email
-	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{to}, message)
-	if err != nil {
+	if err := smtp.SendMail(addr, auth, cfg.SMTPFrom, []string{to}, message); err != nil {
 		return err
 	}
 
-	fmt.Println("Email sent successfully")
 	return nil
 }
 
@@ -49,8 +47,6 @@ func SendOTPEmail(to, otp string) error {
 }
 
 func GenerateExclusiveStartKey(pk, sk string) (map[string]types.AttributeValue, error) {
-
-	// Create ExclusiveStartKey map
 	exclusiveStartKey := map[string]types.AttributeValue{
 		"PK": &types.AttributeValueMemberS{Value: pk},
 		"SK": &types.AttributeValueMemberS{Value: sk},

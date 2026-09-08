@@ -1,0 +1,112 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudFormationServiceNest",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStackResource",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DeleteChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:GetTemplate",
+        "cloudformation:GetTemplateSummary",
+        "cloudformation:ListStackResources",
+        "cloudformation:ValidateTemplate"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:us-east-1:116777895904:stack/serviceNest/*",
+        "arn:aws:cloudformation:us-east-1:116777895904:stack/aws-sam-cli-managed-default/*"
+      ]
+    },
+    {
+      "Sid": "CloudFormationTransform",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateChangeSet"
+      ],
+      "Resource": "arn:aws:cloudformation:us-east-1:aws:transform/Serverless-2016-10-31"
+    },
+    {
+      "Sid": "SamArtifactsBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:GetEncryptionConfiguration"
+      ],
+      "Resource": [
+        "arn:aws:s3:::aws-sam-cli-managed-default-samclisourcebucket-*",
+        "arn:aws:s3:::aws-sam-cli-managed-default-samclisourcebucket-*/*"
+      ]
+    },
+    {
+      "Sid": "LambdaApiGatewayLogs",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:DeleteFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:PublishVersion",
+        "lambda:AddPermission",
+        "lambda:RemovePermission",
+        "lambda:TagResource",
+        "lambda:UntagResource",
+        "lambda:ListTags",
+        "apigateway:GET",
+        "apigateway:POST",
+        "apigateway:PUT",
+        "apigateway:PATCH",
+        "apigateway:DELETE",
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:DescribeLogGroups",
+        "logs:PutRetentionPolicy",
+        "logs:TagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IamPassRoleForSamStack",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:PassRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::116777895904:role/serviceNest-*",
+        "arn:aws:iam::116777895904:role/*HelloWorldFunction*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchSmokeRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks"
+      ],
+      "Resource": "arn:aws:cloudformation:us-east-1:116777895904:stack/serviceNest/*"
+    }
+  ]
+}

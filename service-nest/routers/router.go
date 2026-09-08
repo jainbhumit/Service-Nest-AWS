@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/gorilla/mux"
 	"net/http"
 	"service-nest/controllers"
@@ -10,10 +11,15 @@ import (
 	"service-nest/response"
 )
 
-func SetupRouter(userService interfaces.UserService, householderService interfaces.HouseholderService, providerService interfaces.ServiceProviderService, adminService interfaces.AdminService, notifier *model.ErrorNotifier) *mux.Router {
+func SetupRouter(userService interfaces.UserService, householderService interfaces.HouseholderService, providerService interfaces.ServiceProviderService, adminService interfaces.AdminService, notifier *model.ErrorNotifier, dynamoClient *dynamodb.Client) *mux.Router {
 	r := mux.NewRouter()
 	r.Use(middlewares.CORSMiddleware)
 	r.Use(middlewares.LoggingMiddleware(notifier))
+
+	healthController := controllers.NewHealthController(dynamoClient)
+	r.HandleFunc("/health", healthController.Liveness).Methods("GET")
+	r.HandleFunc("/health/ready", healthController.Readiness).Methods("GET")
+
 	// Public Routes
 	userController := controllers.NewUserController(userService)
 
