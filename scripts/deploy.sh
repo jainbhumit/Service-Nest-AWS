@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
+# OneDrive/Windows may save CRLF; re-exec with LF so bash options parse correctly.
+if [[ -z "${_SN_LF_FIXED:-}" ]] && grep -q $'\r' "$0" 2>/dev/null; then
+  _tmp="$(mktemp)"
+  tr -d '\r' < "$0" > "${_tmp}"
+  export _SN_LF_FIXED=1
+  export _SN_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  exec bash "${_tmp}" "$@"
+fi
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="${_SN_SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT}"
 
 PROFILE="${AWS_PROFILE:-}"

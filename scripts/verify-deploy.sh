@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# OneDrive/Windows may save CRLF; re-exec with LF so bash options parse correctly.
+if [[ -z "${_SN_LF_FIXED:-}" ]] && grep -q $'\r' "$0" 2>/dev/null; then
+  _tmp="$(mktemp)"
+  tr -d '\r' < "$0" > "${_tmp}"
+  export _SN_LF_FIXED=1
+  exec bash "${_tmp}" "$@"
+fi
 set -euo pipefail
 
 PROFILE="${AWS_PROFILE:-}"

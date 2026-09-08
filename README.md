@@ -6,7 +6,7 @@ Go Lambda API (Gorilla Mux) behind API Gateway. Single production stack in `us-e
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.24+
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (local DynamoDB only)
 - AWS CLI configured for manual deploys (`AWS_PROFILE`)
